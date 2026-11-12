@@ -113,7 +113,9 @@
   .vita .oggi { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed var(--inchiostro); opacity: .55; }
   .stato { font: 800 11px "Nunito", sans-serif; text-transform: uppercase; letter-spacing: .04em; margin-top: 5px; display: flex; justify-content: space-between; gap: 4px; }
   .stato.ok { color: var(--ok); } .stato.quasi { color: #a86a00; } .stato.sforato { color: var(--sforato); }
-  .stato span:last-child { color: var(--tenue); text-transform: none; letter-spacing: 0; font-weight: 700; }
+  .stato { display: block; }
+  .stato span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stato span:last-child { color: var(--tenue); text-transform: none; letter-spacing: 0; font-weight: 700; margin-top: 1px; }
 
   /* ── Elenco movimenti ── */
   .lista { padding: 4px 0; }
@@ -252,8 +254,9 @@
 <div id="modale" class="nascosto"></div>
 <div id="avviso" role="status"></div>
 <script>
-var VERSIONE = '1.0';
+var VERSIONE = '1.1';
 var CHANGELOG = [
+  { v: '1.1', data: '2026-11-13', testo: 'Budget all\'anno invece che al mese: la barra dice se sei in linea col punto dell\'anno in cui siamo.' },
   { v: '1.0', data: '2026-11-13', testo: 'App nuova fuori da Google con accesso Face ID (passkey): a ogni apertura chiede il viso, il PIN resta come riserva.' },
   { v: '0.13', data: '2026-11-13', testo: 'Tasse con i dati veri del commercialista: F24 da versare (con "Pagato" che scala la riserva) e totali per anno; le stime partono da lì.' },
   { v: '0.12', data: '2026-11-12', testo: 'Tasse: stima, prossime scadenze F24 e riserva (Report, avviso in home). Dichiarato vs nero con obiettivo. Spese a voce con Siri (Altro).' },
@@ -618,7 +621,7 @@ function homeHtml() {
   h += scadenzaVicinaHtml();
   h += '<div class="due-btn"><button class="btn spesa" data-az="nuovo" data-tipo="spesa">➖ Spesa</button>' +
     '<button class="btn entrata" data-az="nuovo" data-tipo="entrata">➕ Entrata</button></div>';
-  h += '<h2>❤️ Budget del mese<small>tocca per vedere</small></h2><div class="griglia-budget">' + budgetHtml(lista) + '</div>';
+  h += '<h2>❤️ Budget del ' + MESE.slice(0, 4) + '<small>la riga tratteggiata = oggi</small></h2><div class="griglia-budget">' + budgetHtml(MESE.slice(0, 4)) + '</div>';
   var ultimi = lista.slice().sort(ordinaMov).slice(0, 6);
   h += '<h2>📜 Movimenti di ' + esc(MESI[Number(MESE.slice(5, 7)) - 1].toLowerCase()) + '<small>' + lista.length + '</small></h2>' +
     '<div class="foglio lista storto">' + (ultimi.length ? ultimi.map(rigaMov).join('') : '<div class="vuoto">Niente di segnato. Tocca ＋ per la prima spesa!</div>') + '</div>' +
@@ -626,24 +629,28 @@ function homeHtml() {
   return h;
 }
 
-function budgetHtml(lista) {
-  var oggiM = DATI.oggi.slice(0, 7);
-  var giorniMese = new Date(Number(MESE.slice(0, 4)), Number(MESE.slice(5, 7)), 0).getDate();
-  var avanz = MESE === oggiM ? Number(DATI.oggi.slice(8)) / giorniMese : MESE < oggiM ? 1 : 0;
+function budgetAnnoDi(c) { return num(c.budgetAnno) || num(c.budget) * 12; }
+/** Budget dell'anno: speso da gennaio contro il budget annuo; la linea tratteggiata è a che punto dell'anno siamo. */
+function budgetHtml(anno) {
+  var lista = dellAnno(anno), oggiA = DATI.oggi.slice(0, 4);
+  var inizio = new Date(Number(anno), 0, 1), fine = new Date(Number(anno) + 1, 0, 1);
+  var ritmo = anno < oggiA ? 1 : anno > oggiA ? 0 : (new Date(DATI.oggi + 'T12:00:00') - inizio) / (fine - inizio);
   var carte = catDi('spesa').concat(catDi('risparmio')).map(function (c) {
     var speso = lista.reduce(function (x, m) { return x + (m.cat === c.id ? m.importo : 0); }, 0);
-    var budget = num(c.budget);
+    var budget = budgetAnnoDi(c);
     if (!budget && !speso) return '';
-    var p = budget ? speso / budget : 1, classe, testo;
-    if (c.tipo === 'risparmio') { classe = p >= 1 ? 'ok' : 'quasi'; testo = p >= 1 ? '⭐ obiettivo' : 'in corso'; }
-    else if (!budget) { classe = 'quasi'; testo = 'senza budget'; }
-    else { classe = p > 1 ? 'sforato' : p > 0.8 ? 'quasi' : 'ok'; testo = p > 1 ? '💥 sforato' : p > 0.8 ? 'quasi finito' : 'ok'; }
-    var resta = budget ? (c.tipo === 'risparmio' ? budget - speso : budget - speso) : 0;
-    return '<button class="cat-card" data-az="vediCat" data-id="' + esc(c.id) + '">' +
+    var p = budget ? speso / budget : 1, atteso = budget * ritmo, classe, testo;
+    if (c.tipo === 'risparmio') {
+      classe = p >= 1 ? 'ok' : speso >= atteso ? 'ok' : 'quasi';
+      testo = p >= 1 ? '⭐ obiettivo' : speso >= atteso ? 'in linea' : 'indietro';
+    } else if (!budget) { classe = 'quasi'; testo = 'senza budget'; }
+    else { classe = p > 1 ? 'sforato' : speso > atteso ? 'quasi' : 'ok'; testo = p > 1 ? '💥 sforato' : speso > atteso ? 'sopra il ritmo' : 'in linea'; }
+    var resta = budget - speso;
+    return '<button class="cat-card" data-az="vediCatAnno2" data-id="' + esc(c.id) + '" data-a="' + anno + '">' +
       '<div class="testa-c"><span class="emo" style="background:' + c.colore + '">' + esc(c.emoji) + '</span><span style="min-width:0">' +
       '<b>' + esc(c.nome) + '</b><small>' + euro(speso, true) + (budget ? ' / ' + euro(budget, true) : '') + '</small></span></div>' +
       '<div class="vita"><i class="' + classe + '" style="width:' + Math.min(100, Math.max(0, Math.round(p * 100))) + '%"></i>' +
-      (avanz > 0 && avanz < 1 && budget ? '<span class="oggi" style="left:' + Math.round(avanz * 100) + '%"></span>' : '') + '</div>' +
+      (ritmo > 0 && ritmo < 1 && budget ? '<span class="oggi" style="left:' + Math.round(ritmo * 100) + '%"></span>' : '') + '</div>' +
       '<div class="stato ' + classe + '"><span>' + testo + '</span><span>' +
       (budget ? (resta >= 0 ? (c.tipo === 'risparmio' ? 'mancano ' : 'restano ') + euro(resta, true) : '+' + euro(-resta, true)) : '') + '</span></div></button>';
   }).join('');
@@ -992,11 +999,11 @@ function altroHtml() {
         '<b>' + esc(f.causale || c.nome) + (f.attiva === 'No' ? ' <span class="tenue">(in pausa)</span>' : '') + '<br><small class="tenue">giorno ' + esc(f.giorno) + ' · ' + esc(c.nome) + '</small></b>' +
         '<span class="tenue">' + euro(num(f.importo)) + ' ✏️</span></button>';
     }).join('') + '<button class="cat-riga" data-az="nuovaFissa"><span class="emo">➕</span><b>Nuova spesa fissa</b></button></div>';
-  h += '<h2>🏷️ Categorie e budget<small>budget al mese</small></h2>';
+  h += '<h2>🏷️ Categorie e budget<small>budget all\'anno</small></h2>';
   ['spesa', 'risparmio', 'entrata'].forEach(function (tipo) {
     h += '<div class="foglio" style="padding:6px 16px">' + catDi(tipo, true).map(function (c) {
       return '<button class="cat-riga" data-az="apriCat" data-id="' + esc(c.id) + '"><span class="emo" style="background:' + c.colore + '">' + esc(c.emoji) + '</span>' +
-        '<b>' + esc(c.nome) + (c.attivo === 'No' ? ' <span class="tenue">(nascosta)</span>' : '') + '</b><span class="tenue">' + (num(c.budget) ? euro(num(c.budget), true) : '') + ' ✏️</span></button>';
+        '<b>' + esc(c.nome) + (c.attivo === 'No' ? ' <span class="tenue">(nascosta)</span>' : '') + '</b><span class="tenue">' + (budgetAnnoDi(c) ? euro(budgetAnnoDi(c), true) + '/anno' : '') + ' ✏️</span></button>';
     }).join('') + '<button class="cat-riga" data-az="nuovaCat" data-tipo="' + tipo + '"><span class="emo">➕</span><b>Nuova categoria di ' + NOMI_TIPO[tipo].toLowerCase() + '</b></button></div>';
   });
   h += '<h2>🧾 Tasse</h2><div class="foglio">' +
@@ -1187,7 +1194,7 @@ function catModaleHtml() {
   var c = BOZZA_C;
   return '<div class="scheda"><h1>' + (c.id ? '✏️ ' + esc(c.nome) : '➕ Nuova categoria') + '</h1><p class="tenue" style="margin:0">' + NOMI_TIPO[c.tipo] + '</p>' +
     '<div class="due"><div><label class="et" for="c-emoji">Icona</label><input id="c-emoji" class="campo" maxlength="8" value="' + esc(c.emoji || '') + '" style="font-size:24px;text-align:center"></div>' +
-    '<div><label class="et" for="c-budget">' + (c.tipo === 'entrata' ? 'Obiettivo/mese' : 'Budget/mese') + '</label><input id="c-budget" class="campo" inputmode="decimal" value="' + esc(String(c.budget || '').replace('.', ',')) + '" placeholder="—"></div></div>' +
+    '<div><label class="et" for="c-budget">' + (c.tipo === 'entrata' ? 'Obiettivo/anno' : 'Budget/anno') + '</label><input id="c-budget" class="campo" inputmode="decimal" value="' + esc(budgetAnnoDi(c) ? String(budgetAnnoDi(c)).replace('.', ',') : '') + '" placeholder="—"></div></div>' +
     '<label class="et" for="c-nome">Nome</label><input id="c-nome" class="campo" maxlength="40" value="' + esc(c.nome || '') + '">' +
     '<label class="et" for="c-sotto">Sottocategorie (separate da virgola, facoltative)</label><input id="c-sotto" class="campo" value="' + esc(String(c.sotto || '').split(',').join(', ')) + '">' +
     (c.id ? '<label class="et"><input id="c-attivo" type="checkbox"' + (c.attivo === 'No' ? ' checked' : '') + '> Nascondila quando segno (i movimenti vecchi restano)</label>' : '') +
@@ -1317,6 +1324,7 @@ var COMANDI = {
   ok: function () { var fn = alOk; alOk = null; chiudiModale(); if (fn) fn(); },
   vediMese: function () { FILTRO = { tipo: '', cat: '', anno: '', mese: MESE, q: '', quanti: 150 }; vai('movimenti'); },
   vediCat: function (d) { FILTRO = { tipo: '', cat: d.id, anno: '', mese: MESE, q: '', quanti: 150 }; vai('movimenti'); },
+  vediCatAnno2: function (d) { FILTRO = { tipo: '', cat: d.id, anno: d.a, mese: '', q: '', quanti: 150 }; vai('movimenti'); },
   vediCatAnno: function (d) { FILTRO = { tipo: '', cat: d.id, anno: ANNO_R, mese: '', q: '', quanti: 150 }; vai('movimenti'); },
   togliMese: function () { FILTRO.mese = ''; disegna(); },
   filtroTipo: function (d) { FILTRO.tipo = d.t; if (FILTRO.cat && cat(FILTRO.cat).tipo !== d.t && d.t) FILTRO.cat = ''; FILTRO.quanti = 150; disegna(); },
@@ -1327,7 +1335,7 @@ var COMANDI = {
   nuovaCat: function (d) { BOZZA_C = { id: '', tipo: d.tipo, nome: '', emoji: '', sotto: '', budget: '', attivo: 'Sì' }; apriModale('cat'); },
   salvaCat: function () {
     var c = { id: BOZZA_C.id, tipo: BOZZA_C.tipo, nome: $('c-nome').value.trim(), emoji: $('c-emoji').value.trim(), sotto: $('c-sotto').value,
-      budget: $('c-budget').value.trim() ? String(num($('c-budget').value)) : '', attivo: $('c-attivo') && $('c-attivo').checked ? 'No' : 'Sì' };
+      budgetAnno: $('c-budget').value.trim() ? String(num($('c-budget').value)) : '', attivo: $('c-attivo') && $('c-attivo').checked ? 'No' : 'Sì' };
     if (!c.nome) return avviso('Serve un nome', true);
     chiudiModale();
     scrivi('salvaCategoria', { c: c });
