@@ -254,8 +254,9 @@
 <div id="modale" class="nascosto"></div>
 <div id="avviso" role="status"></div>
 <script>
-var VERSIONE = '1.1';
+var VERSIONE = '1.2';
 var CHANGELOG = [
+  { v: '1.2', data: '2026-11-24', testo: 'Home: la media degli ultimi 12 mesi comprende il mese in corso e mostra i centesimi, così si muove a ogni spesa o entrata.' },
   { v: '1.1', data: '2026-11-13', testo: 'Budget all\'anno invece che al mese: la barra dice se sei in linea col punto dell\'anno in cui siamo.' },
   { v: '1.0', data: '2026-11-13', testo: 'App nuova fuori da Google con accesso Face ID (passkey): a ogni apertura chiede il viso, il PIN resta come riserva.' },
   { v: '0.13', data: '2026-11-13', testo: 'Tasse con i dati veri del commercialista: F24 da versare (con "Pagato" che scala la riserva) e totali per anno; le stime partono da lì.' },
@@ -606,14 +607,14 @@ function homeHtml() {
   var lista = delMese(MESE), t = totali(lista);
   var h = '<div class="mesi"><button class="tondo" data-az="mese" data-d="-1" aria-label="Mese prima">◀</button><h1>' + esc(nomeMese(MESE)) + '</h1>' +
     '<button class="tondo" data-az="mese" data-d="1" aria-label="Mese dopo">▶</button></div>';
-  // con la partita IVA le entrate arrivano a ondate: il dato principale è la media degli ultimi 12 mesi completi
+  // con la partita IVA le entrate arrivano a ondate: il dato principale è la media degli ultimi 12 mesi (compreso quello in corso)
   var md = media12(MESE);
   h += '<section class="foglio pila saldo"><small>In media ti restano al mese</small>' +
-    '<div class="grosso' + (md.rimasto < 0 ? ' neg' : '') + '">' + euro(md.rimasto, true) + '</div>' +
+    '<div class="grosso' + (md.rimasto < 0 ? ' neg' : '') + '">' + euro(md.rimasto) + '</div>' +
     '<div class="tre"><div><i class="pallino entrata"></i>Entrate<b>' + euro(md.entrata, true) + '</b></div>' +
     '<div><i class="pallino spesa"></i>Spese<b>' + euro(md.spesa, true) + '</b></div>' +
     '<div><i class="pallino risparmio"></i>Da parte<b>' + euro(md.risparmio, true) + '</b></div></div>' +
-    '<p class="tenue" style="font-size:13px;margin:12px 0 0">Media al mese degli ultimi ' + (md.mesi === 12 ? '12 mesi' : md.mesi + ' mesi') + ' completi: ' + esc(md.periodo) + '</p></section>';
+    '<p class="tenue" style="font-size:13px;margin:12px 0 0">Media al mese degli ultimi ' + (md.mesi === 12 ? '12 mesi' : md.mesi + ' mesi') + ': ' + esc(md.periodo) + '</p></section>';
   h += '<section class="foglio mese-ora"><div class="mese-testa"><b>' + esc(MESI[Number(MESE.slice(5, 7)) - 1]) + '</b><span class="' + (t.rimasto < 0 ? 'neg' : 'pos') + '">' +
     (MESE < DATI.oggi.slice(0, 7) ? 'rimasto ' : 'finora ') + euro(t.rimasto) + '</span></div>' +
     '<div class="mese-righe"><span><i class="pallino entrata"></i>' + euro(t.entrata, true) + '</span><span><i class="pallino spesa"></i>' + euro(t.spesa, true) + '</span>' +
@@ -657,10 +658,10 @@ function budgetHtml(anno) {
   return carte || '<div class="vuoto">Nessun budget impostato (Altro → Categorie).</div>';
 }
 
-/** Media al mese dei 12 mesi completi che finiscono col mese guardato (se è passato) o col mese prima (se è questo o futuro). */
+/** Media al mese dei 12 mesi che finiscono col mese guardato, compreso quello in corso: così si muove a ogni movimento (scelta di Marco). */
 function media12(ym) {
   var oggiM = DATI.oggi.slice(0, 7);
-  var fine = ym < oggiM ? ym : meseSpostato(oggiM, -1), inizio = meseSpostato(fine, -11);
+  var fine = ym < oggiM ? ym : oggiM, inizio = meseSpostato(fine, -11);
   var primo = MOV.reduce(function (x, m) { var k = m.data.slice(0, 7); return !x || k < x ? k : x; }, '');
   if (primo && primo > inizio) inizio = primo;
   var t = totali(MOV.filter(function (m) { var k = m.data.slice(0, 7); return k >= inizio && k <= fine; }));
